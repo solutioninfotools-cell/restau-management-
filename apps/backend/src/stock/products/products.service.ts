@@ -51,22 +51,6 @@ export class ProductsService {
     return paginate(data, total, dto);
   }
 
-  async findAlerts() {
-    return this.prisma.product.findMany({
-      where: {
-        isActive: true,
-        OR: [
-          { currentQty: { lte: 0 } },                   // rupture
-          { AND: [
-            { currentQty: { gt: 0 } },
-            // currentQty <= alertQty — requête raw pour la comparaison entre colonnes
-          ]},
-        ],
-      },
-      include: { category: true },
-    });
-  }
-
   async findAlertsRaw() {
     return this.prisma.$queryRaw<any[]>`
       SELECT p.*, sc.name as "categoryName"

@@ -6,7 +6,9 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
+# Deps de dev nécessaires : @nestjs/cli pour le build, prisma CLI pour
+# `migrate deploy` au démarrage du conteneur.
+RUN npm ci
 
 COPY prisma ./prisma
 COPY src ./src
@@ -35,4 +37,4 @@ COPY --from=builder /app/prisma ./prisma
 EXPOSE 3000
 
 # Run migrations then start
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main"]

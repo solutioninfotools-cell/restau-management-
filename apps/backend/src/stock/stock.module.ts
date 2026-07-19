@@ -5,6 +5,7 @@ import { StockEntriesService } from './entries/stock-entries.service';
 import { StockEntriesController } from './entries/stock-entries.controller';
 import { StockOutputsService, StockOutputsController } from './outputs/stock-outputs';
 import { StockCategoriesService, StockCategoriesController } from './categories/stock-categories';
+import { StockAlertsService, StockAlertsController } from './alerts/stock-alerts';
 
 @Module({
   controllers: [
@@ -12,12 +13,14 @@ import { StockCategoriesService, StockCategoriesController } from './categories/
     StockEntriesController,
     StockOutputsController,
     StockCategoriesController,
+    StockAlertsController,
   ],
   providers: [
     ProductsService,
     StockEntriesService,
     StockOutputsService,
     StockCategoriesService,
+    StockAlertsService,
   ],
   exports: [ProductsService],
 })

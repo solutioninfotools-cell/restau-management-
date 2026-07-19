@@ -8,8 +8,10 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Connexion directe (port 5432) : les migrations ne passent pas par pgbouncer.
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================
@@ -186,11 +188,31 @@ model Product {
 
   stockEntryItems  StockEntryItem[]
   stockOutputItems StockOutputItem[]
+  stockAlerts      StockAlert[]
 
   @@index([code])
   @@index([categoryId])
   @@index([currentQty])
   @@map("products")
+}
+
+// Notification de rupture / seuil bas, persistée par l'écouteur de
+// l'événement "stock.alert" émis lors de chaque mouvement de stock.
+model StockAlert {
+  id           String    @id @default(uuid())
+  currentQty   Decimal   @db.Decimal(10, 3)
+  alertQty     Decimal   @db.Decimal(10, 3)
+  isOutOfStock Boolean   @default(false)
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([readAt])
+  @@index([createdAt])
+  @@map("stock_alerts")
 }
 
 model StockEntry {

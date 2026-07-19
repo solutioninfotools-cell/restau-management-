@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
-import type { PaginatedResponse, Product, StockCategory, StockEntry, StockOutput, Supplier } from '@/types';
+import type { PaginatedResponse, Product, StockAlertNotification, StockCategory, StockEntry, StockOutput, Supplier } from '@/types';
 import type { ProductFormValues, StockEntryFormValues, StockOutputFormValues } from '@/schemas';
 import toast from 'react-hot-toast';
 
@@ -22,6 +22,41 @@ export function useProductAlerts() {
       return data;
     },
     refetchInterval: 30000,
+  });
+}
+
+export function useStockAlerts(unreadOnly = true) {
+  return useQuery({
+    queryKey: ['stock-alerts', { unreadOnly }],
+    queryFn: async () => {
+      const { data } = await apiClient.get<PaginatedResponse<StockAlertNotification>>('/stock/alerts', {
+        params: { unreadOnly, limit: 50 },
+      });
+      return data.data;
+    },
+    refetchInterval: 30000,
+  });
+}
+
+export function useMarkStockAlertRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.patch(`/stock/alerts/${id}/read`);
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['stock-alerts'] }),
+    onError: () => toast.error('Impossible de marquer l\'alerte comme lue'),
+  });
+}
+
+export function useMarkAllStockAlertsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      await apiClient.patch('/stock/alerts/read-all');
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['stock-alerts'] }),
+    onError: () => toast.error('Impossible de marquer les alertes comme lues'),
   });
 }
 

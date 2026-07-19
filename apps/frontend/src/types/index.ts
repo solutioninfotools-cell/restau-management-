@@ -94,6 +94,17 @@ export interface Product {
   isActive: boolean;
 }
 
+export interface StockAlertNotification {
+  id: string;
+  currentQty: number;
+  alertQty: number;
+  isOutOfStock: boolean;
+  readAt: string | null;
+  createdAt: string;
+  productId: string;
+  product: Product;
+}
+
 export interface Supplier {
   id: string;
   name: string;

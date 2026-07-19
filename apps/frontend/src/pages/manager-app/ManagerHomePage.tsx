@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Chart, { type ChartConfiguration } from 'chart.js/auto';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -21,8 +21,11 @@ import {
   CalendarCheck, CalendarRange, CalendarDays, ShoppingBasket, MoreHorizontal,
   Camera, Printer, Save, Upload, CircleCheck, CircleX, Layers,
   Banknote, Shield, Calculator, UserPlus, Search, Filter, Image as ImageIcon,
+  Check,
 } from 'lucide-react';
 import { useLogout } from '@/hooks/useAuth';
+import { useMarkAllStockAlertsRead, useMarkStockAlertRead, useStockAlerts } from '@/hooks/useStock';
+import type { StockAlertNotification } from '@/types';
 
 /* ============================================================================
  * CSS — Style Manager (Design System RestauManager)
@@ -1706,7 +1709,7 @@ const TABLE_AUDIT_ENTRIES: TableAuditEntry[] = [
 /* ============================================================================
  * NOTIFICATIONS (ruptures & expirations)
  * ==========================================================================*/
-type NotificationType = 'rupture' | 'expiration';
+type NotificationType = 'rupture' | 'seuil';
 
 interface StockAlert {
   id: string;
@@ -1714,18 +1717,33 @@ interface StockAlert {
   produit: string;
   qte: string;
   seuil?: string;
-  expiration?: string;
-  jours?: number;
   date: string;
 }
 
-const STOCK_ALERTS: StockAlert[] = [
-  { id: 'n1', type: 'rupture', produit: 'Filet de Bœuf', qte: '0 kg', seuil: '5 kg', date: "Aujourd'hui" },
-  { id: 'n2', type: 'expiration', produit: 'Lait Entier', qte: '15 L', expiration: '29/06', jours: 1, date: "Aujourd'hui" },
-  { id: 'n3', type: 'expiration', produit: 'Crème Fraîche', qte: '4 kg', expiration: '30/06', jours: 2, date: "Aujourd'hui" },
-  { id: 'n4', type: 'rupture', produit: 'Saumon Frais', qte: '0 kg', seuil: '10 kg', date: 'Hier' },
-  { id: 'n5', type: 'rupture', produit: 'Mozzarella', qte: '0 kg', seuil: '5 kg', date: 'Hier' },
-];
+function formatAlertDate(iso: string): string {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+
+  const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (sameDay(date, today)) return "Aujourd'hui";
+  if (sameDay(date, yesterday)) return 'Hier';
+  return date.toLocaleDateString('fr-FR');
+}
+
+// Alertes persistées côté backend (écouteur de l'événement "stock.alert").
+function toStockAlert(notification: StockAlertNotification): StockAlert {
+  const unit = notification.product?.unit ?? '';
+  return {
+    id: notification.id,
+    type: notification.isOutOfStock ? 'rupture' : 'seuil',
+    produit: notification.product?.name ?? 'Produit inconnu',
+    qte: `${Number(notification.currentQty)} ${unit}`.trim(),
+    seuil: `${Number(notification.alertQty)} ${unit}`.trim(),
+    date: formatAlertDate(notification.createdAt),
+  };
+}
 
 /* ============================================================================
  * Topbar avec sélecteur de date au survol + notifications
@@ -1748,6 +1766,8 @@ interface TopbarProps {
   notificationsOpen: boolean;
   onNotificationsOpen: () => void;
   onNotificationsClose: () => void;
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
 }
 
 function Topbar({
@@ -1768,6 +1788,8 @@ function Topbar({
   notificationsOpen,
   onNotificationsOpen,
   onNotificationsClose,
+  onMarkRead,
+  onMarkAllRead,
 }: TopbarProps) {
   const periods = Object.keys(PERIOD_LABELS) as Period[];
   const [periodModalOpen, setPeriodModalOpen] = useState(false);
@@ -1906,11 +1928,18 @@ function Topbar({
 
       {notificationsOpen && (
         <Modal
-          title="Alertes stock & expirations"
+          title="Alertes stock"
           subtitle={`${notifications.length} notification${notifications.length > 1 ? 's' : ''} en attente`}
           onClose={onNotificationsClose}
           width="520px"
-          footer={<button className="btn-primary" onClick={onNotificationsClose}>Fermer</button>}
+          footer={
+            <>
+              {notifications.length > 0 && (
+                <button className="btn-ghost" onClick={onMarkAllRead}>Tout marquer comme lu</button>
+              )}
+              <button className="btn-primary" onClick={onNotificationsClose}>Fermer</button>
+            </>
+          }
         >
           {notifications.length === 0 ? (
             <p style={{ color: '#000', textAlign: 'center' }}>Aucune alerte</p>
@@ -1931,17 +1960,24 @@ function Topbar({
                   </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 800, color: '#000' }}>
-                      {alert.type === 'rupture' ? 'Rupture de stock' : 'Expiration imminente'}
+                      {alert.type === 'rupture' ? 'Rupture de stock' : 'Seuil d\'alerte atteint'}
                     </div>
                     <div style={{ fontSize:'16px', color: '#000' }}>
                       {alert.produit} · {alert.qte}
-                      {alert.type === 'rupture' && alert.seuil && ` (seuil : ${alert.seuil})`}
-                      {alert.type === 'expiration' && alert.jours && ` · expire dans ${alert.jours} jour${alert.jours > 1 ? 's' : ''}`}
+                      {alert.seuil && ` (seuil : ${alert.seuil})`}
                     </div>
                     <div style={{ fontSize:'15px', color: '#000', marginTop: '4px' }}>
                       {alert.date}
                     </div>
                   </div>
+                  <button
+                    className="btn-ghost"
+                    style={{ flexShrink: 0, padding: '4px 8px', fontSize: '15px' }}
+                    onClick={() => onMarkRead(alert.id)}
+                    title="Marquer comme lue"
+                  >
+                    <Check size={15} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -3260,7 +3296,10 @@ export function ManagerPage({ onBack }: { onBack?: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.localStorage?.getItem(SIDEBAR_STORAGE_KEY) === '1');
   const [loggedOut, setLoggedOut] = useState(false);
   const logoutMutation = useLogout();
-  const [notifications, setNotifications] = useState<StockAlert[]>(STOCK_ALERTS);
+  const { data: stockAlerts } = useStockAlerts();
+  const markAlertRead = useMarkStockAlertRead();
+  const markAllAlertsRead = useMarkAllStockAlertsRead();
+  const notifications = useMemo(() => (stockAlerts ?? []).map(toStockAlert), [stockAlerts]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   useEffect(() => { try { window.localStorage?.setItem(SIDEBAR_STORAGE_KEY, sidebarCollapsed ? '1' : '0'); } catch {} }, [sidebarCollapsed]);
@@ -3303,6 +3342,8 @@ export function ManagerPage({ onBack }: { onBack?: () => void }) {
           notificationsOpen={notificationsOpen}
           onNotificationsOpen={() => setNotificationsOpen(true)}
           onNotificationsClose={() => setNotificationsOpen(false)}
+          onMarkRead={(id) => markAlertRead.mutate(id)}
+          onMarkAllRead={() => markAllAlertsRead.mutate()}
         />
         <Sidebar activePage={activePage} onNavigate={setActivePage} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(c => !c)} onLogout={() => { logoutMutation.mutate(); setLoggedOut(true); }} />
         <div className="body">
