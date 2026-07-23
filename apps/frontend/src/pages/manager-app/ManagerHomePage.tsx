@@ -21,7 +21,7 @@ import {
   CalendarCheck, CalendarRange, CalendarDays, ShoppingBasket, MoreHorizontal,
   Camera, Printer, Save, Upload, CircleCheck, CircleX, Layers,
   Banknote, Shield, Calculator, UserPlus, Search, Filter, Image as ImageIcon,
-  Target, Flag, Wallet,
+  Target, Flag, Wallet, Lightbulb,
 } from 'lucide-react';
 import { useLogout } from '@/hooks/useAuth';
 
@@ -1141,12 +1141,53 @@ const MANAGER_DASHBOARD_CSS = `
 .mgr-dashboard .logo-uploader-btn:hover .hover-overlay {
   opacity: 1 !important;
 }
+
+/* ----- CMV / Ratios F&B ----- */
+.mgr-dashboard .cmv-kpi-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+}
+.mgr-dashboard .cmv-spark { width: 92px; height: 50px; flex-shrink: 0; }
+.mgr-dashboard .cmv-ratio-card { padding: 18px 20px; }
+.mgr-dashboard .cmv-ratio-head { display: flex; align-items: center; gap: 10px; }
+.mgr-dashboard .cmv-ratio-value { font-size: 28px; font-weight: 900; font-family: var(--mono); margin-top: 8px; }
+.mgr-dashboard .cmv-ratio-value small { font-size: 16px; font-weight: 800; }
+.mgr-dashboard .cmv-gauge-track {
+  position: relative;
+  height: 6px;
+  border-radius: 4px;
+  background: var(--surface3);
+  margin-top: 16px;
+}
+.mgr-dashboard .cmv-gauge-fill { position: absolute; top: 0; left: 0; height: 100%; border-radius: 4px; opacity: 0.3; }
+.mgr-dashboard .cmv-gauge-dot {
+  position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 3px var(--surface), 0 2px 6px rgba(0,0,0,0.25);
+}
+.mgr-dashboard .cmv-gauge-labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; font-weight: 800; color: #000; }
+.mgr-dashboard .cmv-norm-box {
+  flex-shrink: 0;
+  width: 128px;
+  background: var(--green-soft);
+  border-radius: var(--r2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+}
+.mgr-dashboard .cmv-method-box { padding: 16px 18px; }
 `;
 
 /* ============================================================================
  * Navigation
  * ==========================================================================*/
 type PageId =
+  | 'cmv'
   | 'ca'
   | 'commercial'
   | 'stock'
@@ -1176,6 +1217,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: 'ca', label: "Chiffre d'affaires", icon: LineChart, title: "Chiffre d'affaires" },
       { id: 'commercial', label: 'Stats commerciales', icon: ShoppingCart, title: 'Stats commerciales' },
       { id: 'stock', label: 'Stats stock', icon: Package, title: 'Stats stock' },
+      { id: 'cmv', label: 'Coûts Matières (CMV)', icon: Calculator, title: 'Ratios F&B (CMV)' },
     ],
   },
   {
@@ -1196,7 +1238,7 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-const EXPORTABLE_PAGES: PageId[] = ['ca', 'commercial', 'stock', 'flux'];
+const EXPORTABLE_PAGES: PageId[] = ['cmv', 'ca', 'commercial', 'stock', 'flux'];
 
 type Period = 'jour' | 'semaine' | 'mois' | 'personnalise';
 
@@ -1942,6 +1984,399 @@ function ChartCanvas({ config }: { config: ChartConfiguration }) {
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
   }, []);
   return <canvas ref={canvasRef} />;
+}
+
+function sparklineConfigFor(data: number[], color: string): ChartConfiguration {
+  return {
+    type: 'line',
+    data: {
+      labels: data.map((_, i) => String(i)),
+      datasets: [{
+        data,
+        borderColor: color,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.4,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } },
+    },
+  };
+}
+
+/* ============================================================================
+ * CMV / Ratios F&B — gauge & anneau de ratio
+ * ==========================================================================*/
+function RatioGauge({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  return (
+    <div>
+      <div className="cmv-gauge-track">
+        <div className="cmv-gauge-fill" style={{ width: `${pct}%`, background: color }} />
+        <div className="cmv-gauge-dot" style={{ left: `${pct}%`, background: color }} />
+      </div>
+      <div className="cmv-gauge-labels">
+        <span>0%</span>
+        <span>Optimum</span>
+        <span>{max}%</span>
+      </div>
+    </div>
+  );
+}
+
+function RatioRing({ percent, color, size = 108 }: { percent: number; color: string; size?: number }) {
+  const stroke = 10;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = c - (Math.min(percent, 100) / 100) * c;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface3)" strokeWidth={stroke} />
+      <circle
+        cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      <text x="50%" y="47%" textAnchor="middle" fontSize="19" fontWeight="900" fill={color} fontFamily="var(--mono)">
+        {percent.toFixed(1)}%
+      </text>
+      <text x="50%" y="65%" textAnchor="middle" fontSize="10.5" fontWeight="800" fill="#000">Ratio</text>
+    </svg>
+  );
+}
+
+interface CmvCategory {
+  id: string;
+  name: string;
+  icon: React.ElementType;
+  color: 'blue' | 'orange';
+  stockInitial: number;
+  achats: number;
+  stockFinal: number;
+  ca: number;
+  normeMin: number;
+  normeMax: number;
+}
+
+const CMV_CATEGORIES_DATA: CmvCategory[] = [
+  { id: 'nourriture', name: 'Nourriture', icon: Beef, color: 'blue', stockInitial: 185000, achats: 620000, stockFinal: 165000, ca: 1980000, normeMin: 28, normeMax: 35 },
+  { id: 'boisson', name: 'Boisson', icon: Wine, color: 'orange', stockInitial: 95000, achats: 210000, stockFinal: 88000, ca: 980000, normeMin: 15, normeMax: 25 },
+];
+
+const CMV_COLOR_MAP: Record<'blue' | 'orange', string> = { blue: BLUE, orange: AMBER };
+
+const CMV_SPARK_DATA: Record<string, number[]> = {
+  nourriture: [30.8, 31.2, 31.6, 31.9, 32.1, 32.3],
+  boisson: [20.5, 20.9, 21.3, 21.6, 21.9, 22.1],
+  total: [27.5, 28.0, 28.3, 28.6, 28.8, 29.0],
+};
+
+const CMV_EVOLUTION_MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin'];
+const CMV_EVOLUTION_NOURRITURE = [33.5, 32.8, 32.6, 32.0, 31.0, 32.3];
+const CMV_EVOLUTION_BOISSON = [23.0, 22.5, 21.8, 22.3, 21.4, 22.1];
+
+const cmvEvolutionChartConfig: ChartConfiguration = {
+  type: 'line',
+  data: {
+    labels: CMV_EVOLUTION_MONTHS,
+    datasets: [
+      {
+        label: 'Ratio Nourriture',
+        data: CMV_EVOLUTION_NOURRITURE,
+        borderColor: BLUE,
+        backgroundColor: 'rgba(37,99,235,0.08)',
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: BLUE,
+        fill: true,
+      },
+      {
+        label: 'Ratio Boisson',
+        data: CMV_EVOLUTION_BOISSON,
+        borderColor: AMBER,
+        backgroundColor: 'rgba(180,83,9,0.05)',
+        tension: 0.4,
+        borderWidth: 2,
+        pointRadius: 4,
+        pointBackgroundColor: AMBER,
+        fill: true,
+        borderDash: [5, 3],
+      },
+    ],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: gridLine }, ticks: { color: tickColor } },
+      y: { grid: { color: gridLine }, ticks: { color: tickColor, callback: (v: string | number) => `${v}%` } },
+    },
+  },
+};
+
+function computeCmvCategory(c: CmvCategory) {
+  const cmv = c.stockInitial + c.achats - c.stockFinal;
+  const ratio = (cmv / c.ca) * 100;
+  const conforme = ratio >= c.normeMin && ratio <= c.normeMax;
+  return { ...c, cmv, ratio, conforme };
+}
+
+function buildCmvReportRows(): ExportRow[] {
+  const cats = CMV_CATEGORIES_DATA.map(computeCmvCategory);
+  const totalStockInitial = cats.reduce((s, c) => s + c.stockInitial, 0);
+  const totalAchats = cats.reduce((s, c) => s + c.achats, 0);
+  const totalStockFinal = cats.reduce((s, c) => s + c.stockFinal, 0);
+  const totalCmv = cats.reduce((s, c) => s + c.cmv, 0);
+  const totalCa = cats.reduce((s, c) => s + c.ca, 0);
+  const totalRatio = (totalCmv / totalCa) * 100;
+  const rows: ExportRow[] = cats.map((c) => ({
+    Catégorie: c.name,
+    'Stock Initial (DA)': c.stockInitial,
+    'Achats de la période (DA)': c.achats,
+    'Stock Final (DA)': c.stockFinal,
+    'CMV (DA)': c.cmv,
+    'CA (DA)': c.ca,
+    'Ratio Nourriture & Boisson (%)': Number(c.ratio.toFixed(1)),
+    Norme: `${c.normeMin}% - ${c.normeMax}%`,
+    Écart: c.conforme ? 'Conforme' : 'Hors norme',
+  }));
+  rows.push({
+    Catégorie: 'TOTAL',
+    'Stock Initial (DA)': totalStockInitial,
+    'Achats de la période (DA)': totalAchats,
+    'Stock Final (DA)': totalStockFinal,
+    'CMV (DA)': totalCmv,
+    'CA (DA)': totalCa,
+    'Ratio Nourriture & Boisson (%)': Number(totalRatio.toFixed(1)),
+    Norme: '-',
+    Écart: '-',
+  });
+  return rows;
+}
+
+/* ============================================================================
+ * CmvPage — Coûts Matières (CMV)
+ * ==========================================================================*/
+function CmvPage() {
+  const categories = CMV_CATEGORIES_DATA.map(computeCmvCategory);
+  const totalStockInitial = categories.reduce((s, c) => s + c.stockInitial, 0);
+  const totalAchats = categories.reduce((s, c) => s + c.achats, 0);
+  const totalStockFinal = categories.reduce((s, c) => s + c.stockFinal, 0);
+  const totalCmv = categories.reduce((s, c) => s + c.cmv, 0);
+  const totalCa = categories.reduce((s, c) => s + c.ca, 0);
+  const totalRatio = (totalCmv / totalCa) * 100;
+
+  return (
+    <>
+      {/* Titre de section KPI CMV */}
+      <div className="section-header">
+        <div className="section-title">
+          <Calculator size={16} /> Coûts des Marchandises Vendues (CMV)
+        </div>
+      </div>
+
+      {/* KPI cards : CMV Nourriture / CMV Boisson / CMV Total */}
+      <div className="section" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+        {categories.map((c) => {
+          const color = CMV_COLOR_MAP[c.color];
+          return (
+            <div className="card cmv-kpi-card" key={c.id}>
+              <div className={`kpi-icon ${c.color}`} style={{ width: 52, height: 52, borderRadius: '50%' }}>
+                <c.icon size={24} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="kpi-label">CMV {c.name}</div>
+                <div className="kpi-value kpi-price">{c.cmv.toLocaleString('fr-FR')} <small>DA</small></div>
+                <div style={{ fontSize: '14px', fontWeight: 800, color: '#000', marginTop: '2px' }}>{c.ratio.toFixed(1)}% du CA</div>
+              </div>
+            </div>
+          );
+        })}
+        <div className="card cmv-kpi-card">
+          <div className="kpi-icon purple" style={{ width: 52, height: 52, borderRadius: '50%' }}>
+            <Calculator size={24} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="kpi-label">CMV Total</div>
+            <div className="kpi-value kpi-price">{totalCmv.toLocaleString('fr-FR')} <small>DA</small></div>
+            <div style={{ fontSize: '14px', fontWeight: 800, color: '#000', marginTop: '2px' }}>{totalRatio.toFixed(1)}% du CA</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ratios Nourriture & Boisson (%) — jauges */}
+      <div className="section">
+        <div className="section-header"><div className="section-title"><Percent size={16} /> Ratio Nourriture & Boisson (%)</div></div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+          {categories.map((c) => {
+            const color = CMV_COLOR_MAP[c.color];
+            return (
+              <div className="card cmv-ratio-card" key={c.id}>
+                <div className="cmv-ratio-head">
+                  <div className={`kpi-icon ${c.color}`} style={{ width: 36, height: 36 }}><c.icon size={16} /></div>
+                  <span style={{ fontSize: '15px', fontWeight: 800, color: '#000' }}>Ratio {c.name}</span>
+                </div>
+                <div className="cmv-ratio-value" style={{ color }}>{c.ratio.toFixed(1)} <small>%</small></div>
+                <span className="badge b-green" style={{ marginTop: '8px', display: 'inline-flex' }}>
+                  <CircleCheck size={11} /> Norme : {c.normeMin}–{c.normeMax}%
+                </span>
+                <RatioGauge value={c.ratio} max={45} color={color} />
+              </div>
+            );
+          })}
+          <div className="card cmv-ratio-card">
+            <div className="cmv-ratio-head">
+              <div className="kpi-icon purple" style={{ width: 36, height: 36 }}><Percent size={16} /></div>
+              <span style={{ fontSize: '15px', fontWeight: 800, color: '#000' }}>Ratio Nourriture & Boisson Global</span>
+            </div>
+            <div className="cmv-ratio-value" style={{ color: VIOLET }}>{totalRatio.toFixed(1)} <small>%</small></div>
+            <RatioGauge value={totalRatio} max={45} color={VIOLET} />
+          </div>
+        </div>
+      </div>
+
+      {/* Récapitulatif par catégorie */}
+      <div className="section card tbl-wrap">
+        <div className="card-header">
+          <h3><Calculator size={16} color="var(--blue)" /> Récapitulatif par catégorie</h3>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Catégorie</th>
+              <th>Stock Initial</th>
+              <th>Achats de la période</th>
+              <th>Stock Final</th>
+              <th>CMV</th>
+              <th>CA</th>
+              <th>Ratio Nourriture &amp; Boisson</th>
+              <th>Norme</th>
+              <th>Écart</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((c) => {
+              const color = CMV_COLOR_MAP[c.color];
+              return (
+                <tr key={c.id}>
+                  <td className="td-name">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <c.icon size={15} color={color} /> {c.name}
+                    </div>
+                  </td>
+                  <td>{c.stockInitial.toLocaleString('fr-FR')} DA</td>
+                  <td>{c.achats.toLocaleString('fr-FR')} DA</td>
+                  <td>{c.stockFinal.toLocaleString('fr-FR')} DA</td>
+                  <td className="td-blue">{c.cmv.toLocaleString('fr-FR')} DA</td>
+                  <td>{c.ca.toLocaleString('fr-FR')} DA</td>
+                  <td style={{ fontWeight: 800, color }}>{c.ratio.toFixed(1)}%</td>
+                  <td style={{ fontSize: '15px' }}>{c.normeMin}% – {c.normeMax}%</td>
+                  <td><span className={`badge ${c.conforme ? 'b-green' : 'b-red'}`}>{c.conforme ? <><CircleCheck size={11} /> Conforme</> : <><AlertTriangle size={11} /> Hors norme</>}</span></td>
+                  <td><button className="icon-btn" style={{ width: 32, height: 32 }} onClick={() => demoAction(`Historique ${c.name}`)}><BarChart3 size={14} /></button></td>
+                </tr>
+              );
+            })}
+            <tr style={{ fontWeight: 900 }}>
+              <td className="td-name">TOTAL</td>
+              <td>{totalStockInitial.toLocaleString('fr-FR')} DA</td>
+              <td>{totalAchats.toLocaleString('fr-FR')} DA</td>
+              <td>{totalStockFinal.toLocaleString('fr-FR')} DA</td>
+              <td className="td-blue">{totalCmv.toLocaleString('fr-FR')} DA</td>
+              <td>{totalCa.toLocaleString('fr-FR')} DA</td>
+              <td style={{ color: VIOLET }}>{totalRatio.toFixed(1)}%</td>
+              <td>—</td>
+              <td>—</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Évolution des ratios */}
+      <div className="section card">
+        <div className="card-header">
+          <h3><LineChart size={16} color="var(--blue)" /> Évolution des ratios (6 derniers mois)</h3>
+          <select className="input" style={{ width: 'auto', padding: '6px 10px' }} defaultValue="6">
+            <option value="6">6 mois</option>
+            <option value="12">12 mois</option>
+          </select>
+        </div>
+        <div className="card-body">
+          <div className="chart-wrap" style={{ height: '220px' }}><ChartCanvas config={cmvEvolutionChartConfig} /></div>
+          <div className="legend">
+            <div className="leg-item"><div className="leg-sq" style={{ background: BLUE }}></div> Ratio Nourriture</div>
+            <div className="leg-item"><div className="leg-sq" style={{ background: AMBER }}></div> Ratio Boisson</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Détail par catégorie */}
+      <div className="section charts-2eq">
+        {categories.map((c) => {
+          const color = CMV_COLOR_MAP[c.color];
+          return (
+            <div className="card" key={c.id}>
+              <div className="card-header"><h3><c.icon size={16} color={color} /> {c.name}</h3></div>
+              <div className="card-body" style={{ display: 'flex', gap: '18px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                  <RatioRing percent={c.ratio} color={color} />
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: '#000' }}>Ratio {c.name}</span>
+                </div>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div className="stat-row"><div className="lbl"><ShoppingCart size={15} /> Stock Initial</div><div className="val val-price">{c.stockInitial.toLocaleString('fr-FR')} DA</div></div>
+                  <div className="stat-row"><div className="lbl"><ShoppingCart size={15} /> Achats de la période</div><div className="val val-price">{c.achats.toLocaleString('fr-FR')} DA</div></div>
+                  <div className="stat-row"><div className="lbl"><Package size={15} /> Stock Final</div><div className="val val-price">{c.stockFinal.toLocaleString('fr-FR')} DA</div></div>
+                  <div className="stat-row"><div className="lbl"><Calculator size={15} /> CMV</div><div className="val val-price">{c.cmv.toLocaleString('fr-FR')} DA</div></div>
+                  <div className="stat-row"><div className="lbl"><Coins size={15} /> Chiffre d'affaires</div><div className="val val-price">{c.ca.toLocaleString('fr-FR')} DA</div></div>
+                  <div className="stat-row"><div className="lbl" style={{ fontWeight: 900 }}><Percent size={15} /> Ratio Nourriture &amp; Boisson</div><div className="val" style={{ color }}>{c.ratio.toFixed(1)} %</div></div>
+                </div>
+                <div className="cmv-norm-box">
+                  <span className="badge b-green"><CircleCheck size={11} /> Norme</span>
+                  <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--green)' }}>{c.normeMin}% – {c.normeMax}%</span>
+                  <TrendingUp size={18} color="var(--green)" />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Méthode de calcul */}
+      <div className="section" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.3fr', gap: '14px' }}>
+        <div className="card cmv-method-box">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <FlaskConical size={16} color="var(--blue)" />
+            <strong style={{ fontSize: '15px', color: '#000' }}>CMV (Coût des Marchandises Vendues)</strong>
+          </div>
+          <div style={{ fontSize: '14px', color: '#000', fontWeight: 700 }}>Stock Initial + Achats de la Période – Stock Final</div>
+        </div>
+        <div className="card cmv-method-box">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <FlaskConical size={16} color="var(--blue)" />
+            <strong style={{ fontSize: '15px', color: '#000' }}>Ratio Nourriture &amp; Boisson (%)</strong>
+          </div>
+          <div style={{ fontSize: '14px', color: '#000', fontWeight: 700 }}>( CMV / Chiffre d'Affaires ) x 100</div>
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '6px', fontWeight: 600 }}>
+            (aussi appelé « Ratio F&amp;B », de l'anglais Food &amp; Beverage)
+          </div>
+        </div>
+        <div className="card cmv-method-box" style={{ background: 'var(--orange-soft)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+          <Lightbulb size={18} color="var(--orange)" style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div style={{ fontSize: '14px', color: '#000', fontWeight: 700 }}>
+            Calculé séparément pour la nourriture et les boissons, puis combiné — leurs structures de marge étant très différentes.
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }
 
 /* ============================================================================
@@ -4110,11 +4545,11 @@ export function ManagerPage({ onBack }: { onBack?: () => void }) {
 
   const dateRange = activePeriod === 'personnalise' ? getPeriodRange(activePeriod, customRange) : getPeriodRangeFromDate(activePeriod, referenceDate);
   const periodLabel = formatPeriodLabel(activePeriod, dateRange);
-  const reportRows = activePage === 'flux' ? buildFluxReportRows() : buildReportRows(dateRange);
+  const reportRows = activePage === 'flux' ? buildFluxReportRows() : activePage === 'cmv' ? buildCmvReportRows() : buildReportRows(dateRange);
   const reportTitle = activePage === 'flux' ? 'Entrées & Sorties' : PAGE_TITLES[activePage];
 
-  const showPeriodFilters = ['ca', 'commercial', 'stock', 'audit', 'flux'].includes(activePage);
-  const showExportButtons = ['ca', 'commercial', 'stock', 'flux'].includes(activePage);
+  const showPeriodFilters = ['cmv', 'ca', 'commercial', 'stock', 'audit', 'flux'].includes(activePage);
+  const showExportButtons = ['cmv', 'ca', 'commercial', 'stock', 'flux'].includes(activePage);
   const showSearch = SEARCHABLE_PAGES.includes(activePage);
 
   const handleNavigate = (page: PageId) => {
@@ -4160,6 +4595,7 @@ export function ManagerPage({ onBack }: { onBack?: () => void }) {
         <Sidebar activePage={activePage} onNavigate={handleNavigate} collapsed={sidebarCollapsed} onToggleCollapsed={() => setSidebarCollapsed(c => !c)} onLogout={() => { logoutMutation.mutate(); setLoggedOut(true); }} />
         <div className="body">
           <main className="main" style={{ marginLeft: sidebarCollapsed ? 72 : 250 }}>
+            {activePage === 'cmv' && <CmvPage />}
             {activePage === 'ca' && <RevenuePage />}
             {activePage === 'commercial' && <CommercialPage />}
             {activePage === 'stock' && <StockPage />}
