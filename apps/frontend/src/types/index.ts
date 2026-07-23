@@ -130,6 +130,25 @@ export interface StockOutput {
   items: Array<{ id: string; quantity: number; product: Product }>;
 }
 
+export interface Permission {
+  id: string;
+  action: string;
+  resource: string;
+}
+
+export interface RolePermission {
+  permission: Permission;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description?: string | null;
+  createdAt: string;
+  permissions?: RolePermission[];
+  _count?: { users: number };
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   meta: { total: number; page: number; limit: number; totalPages: number };

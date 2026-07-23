@@ -64,3 +64,10 @@ export const userSchema = z.object({
   roleIds: z.array(z.string().uuid()).optional(),
 });
 export type UserFormValues = z.infer<typeof userSchema>;
+
+export const roleSchema = z.object({
+  name: z.string().min(2, 'Le nom du rôle est requis'),
+  description: z.string().optional(),
+  permissionIds: z.array(z.string().uuid()).optional(),
+});
+export type RoleFormValues = z.infer<typeof roleSchema>;

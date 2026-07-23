@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { useLogout } from '@/hooks/useAuth';
 import { useMarkAllStockAlertsRead, useMarkStockAlertRead, useStockAlerts } from '@/hooks/useStock';
+import { useUsers, useCreateUser, useUpdateUser, useDeleteUser, useToggleUser } from '@/hooks/useUsers';
+import { useRoles } from '@/hooks/useRoles';
 import type { StockAlertNotification } from '@/types';
 
 /* ============================================================================
@@ -2548,50 +2550,97 @@ function TablesZonesPage() {
 }
 
 /* UsersPage */
-type UserRole = 'Manager' | 'Caissier' | 'Magasinier';
 interface StaffUser {
-  id: string; name: string; email: string; role: UserRole; online: boolean; lastActivity: string; initials: string; avatarBg: string; avatarColor: string; badgeCls: string;
+  id: string; name: string; email: string; role: string; roleId: string; online: boolean; lastActivity: string; initials: string; avatarBg: string; avatarColor: string; badgeCls: string;
 }
-const STAFF: StaffUser[] = [
-  { id:'u1', name:'Sofiane Rahmani', email:'sofiane@restaurantpro.dz', role:'Manager', online:true, lastActivity:'Maintenant', initials:'SR', avatarBg:'var(--blue-soft)', avatarColor:'var(--blue2)', badgeCls:'b-purple' },
-  { id:'u2', name:'Amine Belkacem', email:'amine.b@restaurantpro.dz', role:'Caissier', online:true, lastActivity:'Maintenant', initials:'AB', avatarBg:'var(--green-soft)', avatarColor:'var(--green)', badgeCls:'b-green' },
-  { id:'u3', name:'Leila Haddad', email:'leila.h@restaurantpro.dz', role:'Magasinier', online:false, lastActivity:'Il y a 2h', initials:'LH', avatarBg:'var(--orange-soft)', avatarColor:'var(--orange)', badgeCls:'b-amber' },
-  { id:'u4', name:'Yacine Mansouri', email:'yacine.m@restaurantpro.dz', role:'Caissier', online:false, lastActivity:'Il y a 5h', initials:'YM', avatarBg:'#f3e8ff', avatarColor:'#7c3aed', badgeCls:'b-green' },
-  { id:'u5', name:'Sonia Merad', email:'sonia.m@restaurantpro.dz', role:'Manager', online:true, lastActivity:'Maintenant', initials:'SM', avatarBg:'var(--blue-soft)', avatarColor:'var(--blue2)', badgeCls:'b-purple' },
-];
-const ROLE_STYLES: Record<UserRole, { avatarBg: string; avatarColor: string; badgeCls: string }> = {
+type RoleStyle = { avatarBg: string; avatarColor: string; badgeCls: string };
+const ROLE_STYLES: Record<string, RoleStyle> = {
   Manager: { avatarBg:'var(--blue-soft)', avatarColor:'var(--blue2)', badgeCls:'b-purple' },
   Caissier: { avatarBg:'var(--green-soft)', avatarColor:'var(--green)', badgeCls:'b-green' },
   Magasinier: { avatarBg:'var(--orange-soft)', avatarColor:'var(--orange)', badgeCls:'b-amber' },
 };
+const DEFAULT_ROLE_STYLE: RoleStyle = { avatarBg:'var(--blue-soft)', avatarColor:'var(--blue2)', badgeCls:'b-blue' };
 function initialsOf(name: string) { return name.trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase() || '??'; }
 
+// 'MANAGER' -> 'Manager', 'SERVEUR' -> 'Serveur' (les noms de rôles backend sont en majuscules)
+function prettyRole(name: string) { return name ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : '—'; }
+function styleForRole(name: string): RoleStyle { return ROLE_STYLES[prettyRole(name)] ?? DEFAULT_ROLE_STYLE; }
+
 function UsersPage() {
-  const [staff, setStaff] = useState<StaffUser[]>(STAFF);
-  const [roleFilter, setRoleFilter] = useState<'Tous' | UserRole>('Tous');
+  const { data: apiUsers, isLoading } = useUsers();
+  const { data: roles } = useRoles();
+  const createUser = useCreateUser();
+  const updateUser = useUpdateUser();
+  const deleteUserMut = useDeleteUser();
+  const toggleUser = useToggleUser();
+
+  const [roleFilter, setRoleFilter] = useState<string>('Tous');
   const [newUserOpen, setNewUserOpen] = useState(false);
-  const [newUser, setNewUser] = useState({ name:'', email:'', role:'Caissier' as UserRole, password:'' });
+  const [newUser, setNewUser] = useState({ name:'', email:'', roleId:'', password:'' });
   const [manageUser, setManageUser] = useState<StaffUser | null>(null);
-  const [manageDraft, setManageDraft] = useState({ name:'', email:'', role:'Caissier' as UserRole, active:true });
+  const [manageDraft, setManageDraft] = useState({ name:'', email:'', roleId:'', active:true, password:'' });
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Libellés de rôles disponibles (issus du backend) pour les filtres
+  const roleLabels = Array.from(new Set((roles ?? []).map(r => prettyRole(r.name))));
+
+  // Adapte la forme API vers le modèle d'affichage de la page
+  const staff: StaffUser[] = (apiUsers ?? []).map(u => {
+    const r = u.roles?.[0]?.role;
+    const roleName = r?.name ?? '';
+    return {
+      id: u.id,
+      name: u.fullName,
+      email: u.email,
+      role: prettyRole(roleName),
+      roleId: r?.id ?? '',
+      online: u.isActive,
+      lastActivity: u.isActive ? 'Actif' : 'Désactivé',
+      initials: initialsOf(u.fullName),
+      ...styleForRole(roleName),
+    };
+  });
+
   const filtered = roleFilter === 'Tous' ? staff : staff.filter(u => u.role === roleFilter);
+
   const submitNewUser = () => {
-    if (!newUser.name.trim() || !newUser.email.trim()) return;
-    const style = ROLE_STYLES[newUser.role];
-    const user: StaffUser = { id:`u-${Date.now()}`, name:newUser.name.trim(), email:newUser.email.trim(), role:newUser.role, online:false, lastActivity:'Jamais connecté', initials:initialsOf(newUser.name), ...style };
-    setStaff(prev => [...prev, user]);
-    setNewUserOpen(false);
-    setNewUser({ name:'', email:'', role:'Caissier', password:'' });
+    if (!newUser.name.trim() || !newUser.email.trim() || !newUser.password.trim()) return;
+    createUser.mutate(
+      {
+        fullName: newUser.name.trim(),
+        email: newUser.email.trim(),
+        password: newUser.password,
+        roleIds: newUser.roleId ? [newUser.roleId] : [],
+      },
+      { onSuccess: () => { setNewUserOpen(false); setNewUser({ name:'', email:'', roleId:'', password:'' }); } },
+    );
   };
-  const openManage = (u: StaffUser) => { setManageUser(u); setManageDraft({ name:u.name, email:u.email, role:u.role, active:u.online || !u.lastActivity.includes('Désactivé') }); };
+
+  const openManage = (u: StaffUser) => { setManageUser(u); setManageDraft({ name:u.name, email:u.email, roleId:u.roleId, active:u.online, password:'' }); };
+
   const saveManage = () => {
     if (!manageUser) return;
-    const style = ROLE_STYLES[manageDraft.role];
-    setStaff(prev => prev.map(u => u.id === manageUser.id ? { ...u, name:manageDraft.name, email:manageDraft.email, role:manageDraft.role, initials:initialsOf(manageDraft.name), lastActivity:manageDraft.active ? u.lastActivity : 'Désactivé', online:manageDraft.active ? u.online : false, ...style } : u));
-    setManageUser(null);
+    const values: { fullName: string; email: string; roleIds: string[]; password?: string } = {
+      fullName: manageDraft.name.trim(),
+      email: manageDraft.email.trim(),
+      roleIds: manageDraft.roleId ? [manageDraft.roleId] : [],
+    };
+    if (manageDraft.password.trim()) values.password = manageDraft.password;
+    const wantActive = manageDraft.active;
+    const wasActive = manageUser.online;
+    updateUser.mutate(
+      { id: manageUser.id, values },
+      { onSuccess: () => {
+          // Le statut actif se bascule via un endpoint dédié (toggle)
+          if (wantActive !== wasActive) toggleUser.mutate(manageUser.id);
+          setManageUser(null);
+        } },
+    );
   };
-  const deleteUser = (id: string) => { setStaff(prev => prev.filter(u => u.id !== id)); setConfirmDeleteId(null); setManageUser(null); };
+
+  const deleteUser = (id: string) => {
+    deleteUserMut.mutate(id, { onSuccess: () => { setConfirmDeleteId(null); setManageUser(null); } });
+  };
 
   return (
     <>
@@ -2607,28 +2656,32 @@ function UsersPage() {
       <div className="section card tbl-wrap">
         <div className="card-header">
           <h3><Users size={16} color="var(--blue)" /> Équipe</h3>
-          <div style={{display:'flex', gap:'4px'}}>
-            {(['Tous','Manager','Caissier','Magasinier'] as const).map(r => <span key={r} className={`badge ${roleFilter===r?'b-blue':'b-gray'}`} style={{cursor:'pointer'}} onClick={() => setRoleFilter(r)}>{r}</span>)}
+          <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
+            {['Tous', ...roleLabels].map(r => <span key={r} className={`badge ${roleFilter===r?'b-blue':'b-gray'}`} style={{cursor:'pointer'}} onClick={() => setRoleFilter(r)}>{r}</span>)}
           </div>
         </div>
         <table><thead><tr><th>Employé</th><th>Rôle</th><th>Statut</th><th>Dernière activ.</th><th></th></tr></thead>
-        <tbody>{filtered.map(u => (
-          <tr key={u.id}><td><div style={{display:'flex', alignItems:'center', gap:'9px'}}><div className="user-avatar" style={{background:u.avatarBg, color:u.avatarColor}}>{u.initials}</div><div><div style={{fontSize:'16px', fontWeight:'800', color:'#000'}}>{u.name}</div><div style={{fontSize:'15px', color:'#000'}}>{u.email}</div></div></div></td><td><span className={`badge ${u.badgeCls}`}>{u.role}</span></td><td><span className={`online-dot ${u.online?'dot-on':'dot-off'}`}></span> <span style={{fontSize:'15px', color:u.online?'var(--green)':'#000'}}>{u.lastActivity === 'Désactivé' ? 'Désactivé' : u.online ? 'En ligne' : 'Hors ligne'}</span></td><td style={{fontSize:'15px', color:u.online?undefined:'#000'}}>{u.lastActivity}</td><td><button className="btn-ghost" style={{padding:'4px 8px', fontSize:'15px'}} onClick={() => openManage(u)}><MoreHorizontal size={14} /></button></td></tr>
+        <tbody>{isLoading ? (
+          <tr><td colSpan={5} style={{textAlign:'center', padding:'32px', color:'#666'}}>Chargement...</td></tr>
+        ) : filtered.length === 0 ? (
+          <tr><td colSpan={5} style={{textAlign:'center', padding:'32px', color:'#666'}}>Aucun utilisateur</td></tr>
+        ) : filtered.map(u => (
+          <tr key={u.id}><td><div style={{display:'flex', alignItems:'center', gap:'9px'}}><div className="user-avatar" style={{background:u.avatarBg, color:u.avatarColor}}>{u.initials}</div><div><div style={{fontSize:'16px', fontWeight:'800', color:'#000'}}>{u.name}</div><div style={{fontSize:'15px', color:'#000'}}>{u.email}</div></div></div></td><td><span className={`badge ${u.badgeCls}`}>{u.role}</span></td><td><span className={`online-dot ${u.online?'dot-on':'dot-off'}`}></span> <span style={{fontSize:'15px', color:u.online?'var(--green)':'#000'}}>{u.online ? 'Actif' : 'Désactivé'}</span></td><td style={{fontSize:'15px', color:u.online?undefined:'#000'}}>{u.lastActivity}</td><td><button className="btn-ghost" style={{padding:'4px 8px', fontSize:'15px'}} onClick={() => openManage(u)}><MoreHorizontal size={14} /></button></td></tr>
         ))}</tbody></table>
       </div>
 
       {newUserOpen && <Modal title="Nouvel utilisateur" subtitle="Créer un compte" onClose={() => setNewUserOpen(false)} footer={<><button className="btn-ghost" onClick={() => setNewUserOpen(false)}>Annuler</button><button className="btn-primary" onClick={submitNewUser}><UserPlus size={15} /> Créer</button></>}>
         <div className="field"><label>Nom complet</label><input className="input" placeholder="Ex : Karim Ziani" value={newUser.name} onChange={(e) => setNewUser({...newUser, name:e.target.value})} /></div>
         <div className="field"><label>Email</label><input className="input" type="email" placeholder="karim.z@restaurantpro.dz" value={newUser.email} onChange={(e) => setNewUser({...newUser, email:e.target.value})} /></div>
-        <div className="form-row"><div className="field"><label>Rôle</label><select className="input" value={newUser.role} onChange={(e) => setNewUser({...newUser, role:e.target.value as UserRole})}><option value="Manager">Manager</option><option value="Caissier">Caissier</option><option value="Magasinier">Magasinier</option></select></div><div className="field"><label>Mot de passe</label><input className="input" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser({...newUser, password:e.target.value})} /></div></div>
+        <div className="form-row"><div className="field"><label>Rôle</label><select className="input" value={newUser.roleId} onChange={(e) => setNewUser({...newUser, roleId:e.target.value})}><option value="">Sélectionner un rôle...</option>{roles?.map(r => <option key={r.id} value={r.id}>{prettyRole(r.name)}</option>)}</select></div><div className="field"><label>Mot de passe</label><input className="input" type="password" placeholder="••••••••" value={newUser.password} onChange={(e) => setNewUser({...newUser, password:e.target.value})} /></div></div>
       </Modal>}
 
       {manageUser && <Modal title={`Gérer ${manageUser.name}`} subtitle={manageUser.email} onClose={() => setManageUser(null)} footer={<><button className="btn-danger" onClick={() => setConfirmDeleteId(manageUser.id)}><Trash2 size={14} /> Supprimer</button><button className="btn-primary" onClick={saveManage}>Enregistrer</button></>}>
         <div className="field"><label>Nom</label><input className="input" value={manageDraft.name} onChange={(e) => setManageDraft({...manageDraft, name:e.target.value})} /></div>
         <div className="field"><label>Email</label><input className="input" value={manageDraft.email} onChange={(e) => setManageDraft({...manageDraft, email:e.target.value})} /></div>
-        <div className="field"><label>Rôle</label><select className="input" value={manageDraft.role} onChange={(e) => setManageDraft({...manageDraft, role:e.target.value as UserRole})}><option value="Manager">Manager</option><option value="Caissier">Caissier</option><option value="Magasinier">Magasinier</option></select></div>
+        <div className="field"><label>Rôle</label><select className="input" value={manageDraft.roleId} onChange={(e) => setManageDraft({...manageDraft, roleId:e.target.value})}><option value="">Sélectionner un rôle...</option>{roles?.map(r => <option key={r.id} value={r.id}>{prettyRole(r.name)}</option>)}</select></div>
         <div className="perm-row" style={{border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'10px 12px'}}><div className="perm-info"><div className="perm-name">Actif</div><div className="perm-desc">Désactiver bloque la connexion</div></div><div className={`toggle ${manageDraft.active?'on':'off'}`} onClick={() => setManageDraft({...manageDraft, active:!manageDraft.active})}><div className="toggle-dot"></div></div></div>
-        <div className="action-list"><div className="action-list-item" onClick={() => demoAction(`Réinitialiser le mot de passe de ${manageUser.name}`)}><KeyRound size={15} /> Réinitialiser MDP</div></div>
+        <div className="field"><label><KeyRound size={14} style={{verticalAlign:'-2px'}} /> Nouveau mot de passe</label><input className="input" type="password" placeholder="Laisser vide pour ne pas changer" value={manageDraft.password} onChange={(e) => setManageDraft({...manageDraft, password:e.target.value})} /><div style={{fontSize:'13px', color:'#666', marginTop:'4px'}}>Min. 6 caractères. Renseigner ce champ réinitialise le mot de passe.</div></div>
       </Modal>}
 
       {confirmDeleteId && <Modal title="Supprimer ?" subtitle="Irréversible" onClose={() => setConfirmDeleteId(null)} footer={<><button className="btn-ghost" onClick={() => setConfirmDeleteId(null)}>Annuler</button><button className="btn-danger" onClick={() => deleteUser(confirmDeleteId)}><Trash2 size={14} /> Confirmer</button></>}><p style={{color:'#000'}}>Cette action est définitive.</p></Modal>}
