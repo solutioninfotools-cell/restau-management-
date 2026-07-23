@@ -1414,22 +1414,67 @@ function MenuBrowseView({
         )}
       </div>
 
-      {freeTables.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-[1.05rem] font-extrabold uppercase text-black mb-2">Tables libres — cliquez pour commander</p>
-          <div className="flex gap-2 flex-wrap">
-            {freeTables.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => openTable(t.id)}
-                className="t-std px-4 py-2 rounded-r2 border border-green bg-[var(--green-soft)] font-extrabold text-[0.98rem] text-black hover:-translate-y-0.5"
-              >
-                {t.number} <span className="text-black font-semibold">({t.zone})</span>
-              </button>
-            ))}
+      {freeTables.length > 0 && (() => {
+        // Palette de couleurs unique par zone (bg, border, text)
+        const ZONE_PALETTE: { bg: string; border: string; text: string; badge: string }[] = [
+          { bg: '#dcfce7', border: '#16a34a', text: '#14532d', badge: '#16a34a' }, // vert — Salle
+          { bg: '#dbeafe', border: '#2563eb', text: '#1e3a8a', badge: '#2563eb' }, // bleu — Terrasse
+          { bg: '#fef3c7', border: '#d97706', text: '#78350f', badge: '#d97706' }, // ambre — Cafeteria
+          { bg: '#fce7f3', border: '#db2777', text: '#831843', badge: '#db2777' }, // rose
+          { bg: '#ede9fe', border: '#7c3aed', text: '#3b0764', badge: '#7c3aed' }, // violet
+          { bg: '#ffedd5', border: '#ea580c', text: '#7c2d12', badge: '#ea580c' }, // orange
+          { bg: '#cffafe', border: '#0891b2', text: '#164e63', badge: '#0891b2' }, // cyan
+          { bg: '#d1fae5', border: '#059669', text: '#064e3b', badge: '#059669' }, // émeraude
+        ];
+        // Construire un mapping zone → couleur stable (basé sur l'ordre d'apparition des zones)
+        const allZones = Array.from(new Set(freeTables.map((t) => t.zone)));
+        const zoneColor = (zone: string) => {
+          const idx = allZones.indexOf(zone);
+          return ZONE_PALETTE[idx % ZONE_PALETTE.length];
+        };
+        // Grouper les tables libres par zone
+        const tablesByZone = allZones.map((z) => ({
+          zone: z,
+          tables: freeTables.filter((t) => t.zone === z),
+          color: zoneColor(z),
+        }));
+
+        return (
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="text-[1.05rem] font-extrabold uppercase text-black mb-3">
+              Tables libres — cliquez pour commander
+            </p>
+            <div className="flex flex-col gap-3">
+              {tablesByZone.map(({ zone, tables: zoneTables, color }) => (
+                <div key={zone} className="flex items-center gap-2 flex-wrap">
+                  {/* Badge de zone */}
+                  <span
+                    className="shrink-0 text-[0.78rem] font-black uppercase tracking-wide px-2.5 py-1 rounded-full"
+                    style={{ background: color.badge, color: '#fff' }}
+                  >
+                    {zone}
+                  </span>
+                  {/* Boutons de table pour cette zone */}
+                  {zoneTables.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => openTable(t.id)}
+                      className="t-std px-4 py-2 rounded-r2 font-extrabold text-[0.95rem] hover:-translate-y-0.5 transition-transform"
+                      style={{
+                        background: color.bg,
+                        border: `1.5px solid ${color.border}`,
+                        color: color.text,
+                      }}
+                    >
+                      {t.number}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
